@@ -60,16 +60,21 @@ async function reason(
   await fill(page, `理由 ${index}`, text);
 }
 async function rateAll(page: Page, scores: Record<string, number>) {
+  await expect(
+    page.getByRole("heading", { name: "這個因素，對你有多大影響？" }),
+  ).toBeVisible();
   while (
     await page
       .getByRole("heading", { name: "這個因素，對你有多大影響？" })
       .isVisible()
   ) {
     const text = await page.locator(".rating-card h2").innerText();
+    const before = await page.locator(".rating-progress").innerText();
     await page
       .locator(`input[name="score"][value="${scores[text] ?? 3}"]`)
       .check();
     await page.getByRole("button", { name: /保存.*項/ }).click();
+    await expect(page.locator(".rating-progress")).not.toHaveText(before);
     await saved(page);
   }
   await expect(page.getByRole("button", { name: "揭曉結果" })).toBeVisible();
