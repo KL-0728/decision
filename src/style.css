@@ -1339,3 +1339,113 @@ summary {
 .result-factors small {
   color: #69755f;
 }
+.decision-settings,
+.factor-extra {
+  margin-top: 16px;
+  border-top: 1px solid #e1e7df;
+  padding-top: 14px;
+}
+.decision-settings summary,
+.factor-extra summary {
+  cursor: pointer;
+  color: #526b59;
+  font-size: 0.88rem;
+}
+.decision-settings .form-grid {
+  margin-top: 18px;
+}
+.factor-extra .knowledge {
+  margin: 14px 0;
+}
+.inspiration-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  margin: 18px 0;
+  background: #f2f6ee;
+  border-radius: 16px;
+}
+.inspiration-intro p {
+  margin: 5px 0 0;
+  font-size: 0.86rem;
+  color: #67766b;
+}
+.inspiration-intro button {
+  flex-shrink: 0;
+}
+.inspiration-panel {
+  padding: 18px;
+  border: 1px solid #d8e4d4;
+  border-radius: 18px;
+  margin-bottom: 22px;
+  background: #fafcf7;
+}
+.topic-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+}
+.topic-picker select {
+  width: auto;
+}
+.thought-card {
+  padding: 16px 0;
+  border-top: 1px solid #e1e7df;
+}
+.thought-card h4 {
+  margin: 7px 0 12px;
+  line-height: 1.65;
+}
+.thought-examples {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.thought-examples button {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+  line-height: 1.65;
+  padding: 12px;
+  background: white;
+}
+.thought-examples button > span:nth-child(2) {
+  flex: 1;
+}
+.thought-examples b {
+  color: #526b59;
+  white-space: nowrap;
+}
+.suggestion-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.7;
+  margin-top: 18px;
+}
+.suggestion-check input {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+@media (max-width: 600px) {
+  .inspiration-intro {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .inspiration-panel {
+    padding: 14px;
+  }
+  .inspiration-panel .section-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .thought-examples {
+    grid-template-columns: 1fr;
+  }
+}

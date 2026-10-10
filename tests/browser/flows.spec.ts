@@ -13,6 +13,81 @@ async function saved(page: Page) {
     page.getByRole("status").filter({ hasText: /^已保存$/ }),
   ).toBeVisible();
 }
+
+test("one question and offline prompts create confirmed and pending reasons", async ({
+  page,
+}, info) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "建立新決策" }).click();
+  await page.getByRole("button", { name: /要不要做/ }).click();
+  await fill(page, "你正在猶豫什麼？", "要不要換工作？");
+  await expect(page.getByLabel("決策標題", { exact: true })).toBeHidden();
+  await page.reload();
+  await page
+    .locator(".card-open")
+    .filter({ hasText: "要不要換工作？" })
+    .click();
+  await page.locator(".decision-settings summary").click();
+  await expect(page.getByLabel("決策標題", { exact: true })).toHaveValue(
+    "要不要換工作？",
+  );
+  await expect(page.getByLabel("行動名稱", { exact: true })).toHaveValue(
+    "換工作",
+  );
+  await expect(page.getByLabel("比較基準", { exact: true })).toHaveValue(
+    "維持現況",
+  );
+  await page.locator(".decision-settings summary").click();
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+  });
+  await page.context().setOffline(true);
+  await page.getByRole("button", { name: /幫我想利弊/ }).click();
+  await expect(page.getByLabel("考量主題")).toHaveValue("work");
+  await expect(page.locator(".thought-card")).toHaveCount(3);
+  await page.getByRole("button", { name: /更多考量方向/ }).click();
+  await expect(page.locator(".thought-card")).toHaveCount(6);
+  await page.getByRole("button", { name: "收起其他考量" }).click();
+  await page.screenshot({
+    path: `artifacts/qa/${info.project.name}-prompts.png`,
+    fullPage: true,
+  });
+  const example = page.getByRole("button", {
+    name: /薪資或福利比現在更符合需求/,
+  });
+  await example.click();
+  await expect(
+    page.getByRole("button", { name: "加入待確認理由" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(page.locator(".factor")).toHaveCount(0);
+  await example.click();
+  await page.getByRole("button", { name: "加入待確認理由" }).click();
+  await saved(page);
+  await expect(example).toBeDisabled();
+  await expect(page.getByLabel("資訊未知")).toBeChecked();
+  await page.getByRole("button", { name: "開始逐項評分" }).click();
+  await expect(page.getByRole("alert")).toBeVisible();
+  await page.getByRole("button", { name: /通勤更方便，能省下時間/ }).click();
+  await page.getByLabel("要加入的理由").fill("通勤每天少半小時");
+  await page.getByLabel("我已確認這個理由符合自己的情況，可以評分").check();
+  await page.getByRole("button", { name: "加入已知理由" }).click();
+  await saved(page);
+  await page.getByRole("button", { name: /收起提示/ }).click();
+  await page.screenshot({
+    path: `artifacts/qa/${info.project.name}-simplified.png`,
+    fullPage: true,
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.getByRole("button", { name: "開始逐項評分" }).click();
+  await expect(page.locator(".rating-card h2")).toHaveText("通勤每天少半小時");
+  await expect(page.locator(".rating-progress")).toContainText("0 / 1");
+  await page.context().setOffline(false);
+});
 test("incomplete result metadata stays unsaved until corrected", async ({
   page,
 }) => {
@@ -36,6 +111,12 @@ test("incomplete result metadata stays unsaved until corrected", async ({
   await expect(page.locator(".totals strong").last()).toHaveText("+4");
 });
 async function fill(page: Page, label: string, value: string) {
+  if (
+    !(await page.getByLabel(label, { exact: true }).isVisible()) &&
+    ["決策標題", "比較基準", "行動名稱"].includes(label)
+  ) {
+    await page.locator(".decision-settings summary").click();
+  }
   await page.getByLabel(label, { exact: true }).fill(value);
   await page.getByLabel(label, { exact: true }).press("Tab");
   await saved(page);
@@ -45,7 +126,7 @@ async function create(page: Page) {
   await page.getByRole("button", { name: "建立新決策" }).click();
   await page.getByRole("button", { name: /要不要做/ }).click();
   await fill(page, "決策標題", "是否接受新工作");
-  await fill(page, "想回答的問題", "這個工作適合我嗎？");
+  await fill(page, "你正在猶豫什麼？", "這個工作適合我嗎？");
   await fill(page, "比較基準", "維持目前工作");
   await fill(page, "行動名稱", "接受新工作");
 }
@@ -89,6 +170,7 @@ test("write, rate, reload, reveal, change a bottom line and preserve first resul
   await reason(page, "優點", "薪資增加", 2);
   await reason(page, "缺點", "通勤變長", 3);
   await reason(page, "缺點", "實際工時待查", 4);
+  await page.locator(".factor-extra summary").nth(3).click();
   await page.getByLabel("資訊未知").nth(3).check();
   await saved(page);
   await page.screenshot({
@@ -304,7 +386,7 @@ test("mobile layout, install help, and validation are usable", async ({
   await page.getByRole("button", { name: "建立新決策" }).click();
   await page.getByRole("button", { name: /多選項比較/ }).click();
   await page.getByRole("button", { name: "開始逐項評分" }).click();
-  await expect(page.getByRole("alert")).toContainText("請填寫比較基準");
+  await expect(page.getByRole("alert")).toContainText("請填寫想回答的問題");
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -354,7 +436,7 @@ test("multi-option backup displays ties, pending qualifications, and single elig
   await page.getByRole("button", { name: "修改整理內容" }).click();
   for (const i of [0, 1]) {
     const section = page.locator(".option-panel").nth(i);
-    await section.locator("summary").click();
+    await section.locator(".bottom-lines summary").click();
     await section.getByRole("button", { name: "新增底線" }).click();
     await section.getByLabel("底線 1", { exact: true }).fill("超出預算");
     await section.getByLabel("底線 1", { exact: true }).press("Tab");
@@ -378,16 +460,16 @@ test("writes typed while saving are eventually preserved", async ({ page }) => {
   await reason(page, "優點", "想法", 1);
   await page.getByLabel("決策標題", { exact: true }).fill("快速修改一");
   await page.getByLabel("決策標題", { exact: true }).press("Tab");
-  await page.getByLabel("想回答的問題", { exact: true }).fill("快速修改二");
-  await page.getByLabel("想回答的問題", { exact: true }).press("Tab");
+  await page.getByLabel("你正在猶豫什麼？", { exact: true }).fill("快速修改二");
+  await page.getByLabel("你正在猶豫什麼？", { exact: true }).press("Tab");
   await saved(page);
-  await expect(page.getByLabel("想回答的問題", { exact: true })).toHaveValue(
-    "快速修改二",
-  );
+  await expect(
+    page.getByLabel("你正在猶豫什麼？", { exact: true }),
+  ).toHaveValue("快速修改二");
   await page.waitForTimeout(850);
   await page.reload();
   await page.locator(".card-open").filter({ hasText: "快速修改一" }).click();
-  await expect(page.getByLabel("想回答的問題", { exact: true })).toHaveValue(
-    "快速修改二",
-  );
+  await expect(
+    page.getByLabel("你正在猶豫什麼？", { exact: true }),
+  ).toHaveValue("快速修改二");
 });

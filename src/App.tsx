@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import {
+  actionFromQuestion,
+  detectTopic,
+  promptsFor,
+  suggestedFactor,
+  topicNames,
+  type Topic,
+} from "./prompts";
+import {
   clone,
   newDecision,
   newOption,
@@ -58,6 +66,7 @@ function Field({
       <span>{label}</span>
       {multiline ? (
         <textarea
+          aria-label={label}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onBlur={onBlur}
@@ -66,6 +75,7 @@ function Field({
         />
       ) : (
         <input
+          aria-label={label}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onBlur={onBlur}
@@ -815,6 +825,16 @@ function Editor({
 }) {
   const [draft, setDraft] = useState(() => clone(decision)),
     [errors, setErrors] = useState<string[]>([]);
+  const [chosenTopic, setChosenTopic] = useState<Topic | null>(null);
+  const [showAllPrompts, setShowAllPrompts] = useState(false);
+  const [inspiration, setInspiration] = useState<number | null>(null);
+  const [suggestion, setSuggestion] = useState<{
+    optionIndex: number;
+    text: string;
+    kind: "pro" | "con";
+  } | null>(null);
+  const [suggestionText, setSuggestionText] = useState("");
+  const [suggestionKnown, setSuggestionKnown] = useState(false);
   const draftRef = useRef(draft),
     savedRef = useRef(decision),
     failed = useRef(false),
@@ -918,43 +938,86 @@ function Editor({
         <p>寫下相對於同一個基準的利弊。先不評分，讓想法完整一些。</p>
       </div>
       <section className="panel">
-        <h2>這次的問題</h2>
-        <div className="form-grid">
-          <Field
-            label="決策標題"
-            value={draft.title}
-            onChange={(s) => change((d) => (d.title = s))}
-            onBlur={blur}
-            placeholder="例如：我的下一份工作"
-          />
-          <Field
-            label="想回答的問題"
-            value={draft.question}
-            onChange={(s) => change((d) => (d.question = s))}
-            onBlur={blur}
-            placeholder="例如：要不要接受新的工作邀請？"
-          />
-          <Field
-            label={draft.mode === "single" ? "比較基準" : "共同的比較基準"}
-            value={draft.baseline}
-            onChange={(s) => change((d) => (d.baseline = s))}
-            onBlur={blur}
-            placeholder="例如：維持目前工作"
-          />
-        </div>
+        <h2>先寫一句就好</h2>
+        <Field
+          label="你正在猶豫什麼？"
+          value={draft.question}
+          onChange={(s) =>
+            change((d) => {
+              const previous = d.question;
+              if (!d.title || d.title === previous) d.title = s;
+              if (
+                d.mode === "single" &&
+                (!d.options[0].name ||
+                  d.options[0].name === actionFromQuestion(previous))
+              )
+                d.options[0].name = actionFromQuestion(s);
+              d.question = s;
+            })
+          }
+          onBlur={blur}
+          placeholder={
+            draft.mode === "single"
+              ? "例如：要不要換工作？"
+              : "例如：週末要去哪裡旅行？"
+          }
+          multiline
+        />
         <p className="hint">
-          所有利弊都以這個基準來比較，避免把同一個差異重複計分。
+          {draft.mode === "single"
+            ? "這句話會作為標題與行動的起點。"
+            : "這句話會作為決策標題。"}
+          預設與「維持現況」比較，需要時再調整。
         </p>
-        {draft.mode === "multiple" && (
-          <Field
-            label="共同考量清單（選填，不計分）"
-            value={draft.commonConsiderations}
-            onChange={(s) => change((d) => (d.commonConsiderations = s))}
-            onBlur={blur}
-            placeholder="薪資、工時、通勤、成長空間…"
-            multiline
-          />
-        )}
+        <details
+          className="decision-settings"
+          open={
+            decision.title !== decision.question ||
+            decision.baseline !== "維持現況"
+          }
+        >
+          <summary>
+            調整標題、比較基準與其他設定 <span>（選填）</span>
+          </summary>
+          <div className="form-grid">
+            <Field
+              label="決策標題"
+              value={draft.title}
+              onChange={(s) => change((d) => (d.title = s))}
+              onBlur={blur}
+              placeholder="例如：我的下一份工作"
+            />
+            <Field
+              label={draft.mode === "single" ? "比較基準" : "共同的比較基準"}
+              value={draft.baseline}
+              onChange={(s) => change((d) => (d.baseline = s))}
+              onBlur={blur}
+              placeholder="例如：維持目前工作"
+            />
+          </div>
+          <p className="hint">
+            所有利弊都以這個基準來比較，避免把同一個差異重複計分。
+          </p>
+          {draft.mode === "multiple" && (
+            <Field
+              label="共同考量清單（選填，不計分）"
+              value={draft.commonConsiderations}
+              onChange={(s) => change((d) => (d.commonConsiderations = s))}
+              onBlur={blur}
+              placeholder="薪資、工時、通勤、成長空間…"
+              multiline
+            />
+          )}
+          {draft.mode === "single" && (
+            <Field
+              label="行動名稱"
+              value={draft.options[0].name}
+              onChange={(s) => modifyOption(0, (o) => (o.name = s))}
+              onBlur={blur}
+              placeholder="例如：換工作"
+            />
+          )}
+        </details>
       </section>
       {draft.options.map((option, oi) => (
         <section className="panel option-panel" key={option.id}>
@@ -983,19 +1046,99 @@ function Editor({
               </button>
             )}
           </div>
-          <Field
-            label={draft.mode === "single" ? "行動名稱" : "選項名稱"}
-            value={option.name}
-            onChange={(s) => modifyOption(oi, (o) => (o.name = s))}
-            onBlur={blur}
-            placeholder={
-              draft.mode === "single" ? "例如：接受新工作" : "例如：公司 A"
-            }
-          />
+          {draft.mode === "multiple" && (
+            <Field
+              label="選項名稱"
+              value={option.name}
+              onChange={(s) => modifyOption(oi, (o) => (o.name = s))}
+              onBlur={blur}
+              placeholder="例如：公司 A"
+            />
+          )}
           <div className="section-head reason-heading">
             <h3>利與弊</h3>
             <span className="muted">每項只寫一個不同的理由</span>
           </div>
+          <div className="inspiration-intro">
+            <div>
+              <strong>不知道從哪裡想？</strong>
+              <p>看看考量問題與參考句，再改成適合你的理由。</p>
+            </div>
+            <button
+              disabled={busy}
+              onClick={() => setInspiration(inspiration === oi ? null : oi)}
+              aria-expanded={inspiration === oi}
+            >
+              {inspiration === oi ? "收起提示" : "幫我想利弊"} <span>✦</span>
+            </button>
+          </div>
+          {inspiration === oi && (
+            <div className="inspiration-panel">
+              <div className="section-head">
+                <span className="pill">內建思考提示 · 可離線使用</span>
+                <label className="topic-picker">
+                  考量主題
+                  <select
+                    aria-label="考量主題"
+                    value={chosenTopic ?? detectTopic(draft.question)}
+                    onChange={(e) => {
+                      setChosenTopic(e.target.value as Topic);
+                      setShowAllPrompts(false);
+                    }}
+                  >
+                    {Object.entries(topicNames).map(([key, name]) => (
+                      <option key={key} value={key}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <p className="hint">
+                以下是參考方向，不是針對你的事實判斷。只加入適用的理由，避免重複計分。
+              </p>
+              {promptsFor(chosenTopic ?? detectTopic(draft.question))
+                .slice(0, showAllPrompts ? undefined : 3)
+                .map((prompt) => (
+                  <div className="thought-card" key={prompt.id}>
+                    <span className="eyebrow">{prompt.dimension}</span>
+                    <h4>{prompt.question}</h4>
+                    <div className="thought-examples">
+                      {(["pro", "con"] as const).map((kind) => {
+                        const text = suggestedFactor(prompt, kind);
+                        const exists = option.factors.some(
+                          (f) => f.text.trim() === text,
+                        );
+                        return (
+                          <button
+                            key={kind}
+                            disabled={busy || exists}
+                            onClick={() => {
+                              setSuggestion({ optionIndex: oi, text, kind });
+                              setSuggestionText(text);
+                              setSuggestionKnown(false);
+                            }}
+                          >
+                            <span className={`factor-badge ${kind}`}>
+                              {kind === "pro" ? "利" : "弊"}
+                            </span>
+                            <span>{text}</span>
+                            <b>{exists ? "已加入" : "＋"}</b>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              <button
+                className="quiet"
+                onClick={() => setShowAllPrompts(!showAllPrompts)}
+                aria-expanded={showAllPrompts}
+              >
+                {showAllPrompts ? "收起其他考量" : "更多考量方向 ↓"}
+              </button>
+            </div>
+          )}
           {option.factors.map((factor, fi) => (
             <div className={`factor ${factor.kind}`} key={factor.id}>
               <div className="factor-controls">
@@ -1017,22 +1160,6 @@ function Editor({
                   <option value="pro">＋ 優點</option>
                   <option value="con">− 缺點</option>
                 </select>
-                <label className="knowledge">
-                  <input
-                    type="checkbox"
-                    checked={factor.knowledge === "unknown"}
-                    onChange={(e) => {
-                      modifyOption(oi, (o) => {
-                        o.factors[fi].knowledge = e.target.checked
-                          ? "unknown"
-                          : "known";
-                        o.factors[fi].score = null;
-                      });
-                      void persist();
-                    }}
-                  />
-                  資訊未知
-                </label>
                 <button
                   className="icon-button"
                   aria-label={`移除理由 ${fi + 1}`}
@@ -1058,18 +1185,43 @@ function Editor({
                     : "可能需要付出什麼代價？"
                 }
               />
-              <Field
-                label={`理由 ${fi + 1} 備註（選填）`}
-                value={factor.note}
-                onChange={(s) =>
-                  modifyOption(oi, (o) => (o.factors[fi].note = s))
-                }
-                onBlur={blur}
-                placeholder="補充背景或需要查證的地方"
-              />
-              {factor.knowledge === "unknown" && (
-                <p className="hint">這項暫不評分，揭曉時會列為待確認資訊。</p>
-              )}
+              <details
+                className="factor-extra"
+                open={!!factor.note || factor.knowledge === "unknown"}
+              >
+                <summary>
+                  備註與資訊狀態
+                  {factor.knowledge === "unknown" ? " · 待確認" : ""}
+                </summary>
+                <label className="knowledge">
+                  <input
+                    type="checkbox"
+                    checked={factor.knowledge === "unknown"}
+                    onChange={(e) => {
+                      modifyOption(oi, (o) => {
+                        o.factors[fi].knowledge = e.target.checked
+                          ? "unknown"
+                          : "known";
+                        o.factors[fi].score = null;
+                      });
+                      void persist();
+                    }}
+                  />
+                  資訊未知
+                </label>
+                <Field
+                  label={`理由 ${fi + 1} 備註（選填）`}
+                  value={factor.note}
+                  onChange={(s) =>
+                    modifyOption(oi, (o) => (o.factors[fi].note = s))
+                  }
+                  onBlur={blur}
+                  placeholder="補充背景或需要查證的地方"
+                />
+                {factor.knowledge === "unknown" && (
+                  <p className="hint">這項暫不評分，揭曉時會列為待確認資訊。</p>
+                )}
+              </details>
             </div>
           ))}
           <div className="add-actions">
@@ -1218,6 +1370,60 @@ function Editor({
           </button>
         )}
       </div>
+      {suggestion && (
+        <Modal
+          title="把參考句改成你的理由"
+          onClose={() => setSuggestion(null)}
+          footer={
+            <>
+              <button disabled={busy} onClick={() => setSuggestion(null)}>
+                取消
+              </button>
+              <button
+                className="primary"
+                disabled={
+                  busy ||
+                  !suggestionText.trim() ||
+                  draft.options[suggestion.optionIndex].factors.some(
+                    (f) => f.text.trim() === suggestionText.trim(),
+                  )
+                }
+                onClick={async () => {
+                  const factor = newFactor(suggestion.kind);
+                  factor.text = suggestionText.trim();
+                  factor.knowledge = suggestionKnown ? "known" : "unknown";
+                  modifyOption(suggestion.optionIndex, (o) =>
+                    o.factors.push(factor),
+                  );
+                  setSuggestion(null);
+                  await persist();
+                }}
+              >
+                加入{suggestionKnown ? "已知" : "待確認"}理由
+              </button>
+            </>
+          }
+        >
+          <p className="hint">
+            這是內建參考句，請確認適不適用，再決定是否加入。
+          </p>
+          <Field
+            label="要加入的理由"
+            value={suggestionText}
+            onChange={setSuggestionText}
+            multiline
+          />
+          <label className="suggestion-check">
+            <input
+              type="checkbox"
+              checked={suggestionKnown}
+              onChange={(e) => setSuggestionKnown(e.target.checked)}
+            />
+            我已確認這個理由符合自己的情況，可以評分
+          </label>
+          <p className="hint">尚未確認時會加入待確認資訊，這項暫不計分。</p>
+        </Modal>
+      )}
     </div>
   );
 }

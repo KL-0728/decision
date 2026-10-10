@@ -69,7 +69,7 @@ export function newDecision(mode: Mode): Decision {
     title: "",
     question: "",
     mode,
-    baseline: "",
+    baseline: "維持現況",
     status: "draft",
     createdAt: now,
     updatedAt: now,
